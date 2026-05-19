@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { createShop } from '@/lib/api-client';
 
 const storeSchema = z.object({
   storeName: z.string().min(1, 'Store name is required').min(3, 'Store name must be at least 3 characters'),
@@ -47,21 +48,42 @@ export function StoreForm() {
 
   async function onSubmit(values: StoreFormValues) {
     setIsLoading(true);
-    // Store complete registration data
-    const registerData = localStorage.getItem('registerData');
+    const registerDataRaw = localStorage.getItem('registerData');
+    const registerData = JSON.parse(registerDataRaw || '{}') as {
+      firstName?: string;
+      lastName?: string;
+      email?: string;
+      phone?: string;
+    };
+
+    const storePayload = {
+      ...registerData,
+      storeName: values.storeName,
+      businessType: values.businessType,
+      logo: logoPreview,
+    };
+
     localStorage.setItem(
       'storeData',
-      JSON.stringify({
-        ...JSON.parse(registerData || '{}'),
-        storeName: values.storeName,
-        businessType: values.businessType,
-        logo: logoPreview,
-      })
+      JSON.stringify(storePayload)
     );
+    localStorage.setItem('storeName', values.storeName);
+    if (registerData.firstName) localStorage.setItem('firstName', registerData.firstName);
+    if (registerData.lastName) localStorage.setItem('lastName', registerData.lastName);
+
+    try {
+      await createShop({
+        name: values.storeName,
+        description: `Business type: ${values.businessType}`,
+      });
+    } catch {
+      // User may not be logged in yet (email verification flow). Preserve local flow.
+    }
+
     // Clear temporary data
     localStorage.removeItem('registerEmail');
     localStorage.removeItem('registerData');
-    
+
     await new Promise((resolve) => setTimeout(resolve, 500));
     router.push('/dashboard');
     setIsLoading(false);

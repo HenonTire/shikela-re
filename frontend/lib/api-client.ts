@@ -14,6 +14,11 @@ interface LoginResponse {
   access: string;
 }
 
+interface ErrorPayload {
+  detail?: string;
+  [key: string]: unknown;
+}
+
 export type UserRole = 'store_owner' | 'supplier' | 'courier';
 
 function getAccessToken(): string | null {
@@ -79,7 +84,19 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(errText || `Request failed: ${response.status}`);
+    let parsed: ErrorPayload | null = null;
+    try {
+      parsed = errText ? (JSON.parse(errText) as ErrorPayload) : null;
+    } catch {
+      parsed = null;
+    }
+
+    const message =
+      parsed?.detail ||
+      (errText.startsWith('{') ? 'Request failed. Please check your input.' : errText) ||
+      `Request failed: ${response.status}`;
+
+    throw new Error(message);
   }
 
   if (response.status === 204) return {} as T;
@@ -145,4 +162,12 @@ export async function detectUserRole(): Promise<UserRole> {
   }
 
   return 'courier';
+}
+
+export async function createShop(payload: {
+  name: string;
+  description?: string;
+  domain?: string;
+}) {
+  return apiRequest('/shops/', { method: 'POST', body: payload, auth: true });
 }
