@@ -241,3 +241,81 @@ export const AI_SAMPLE_RESPONSES = {
   sales:
     'To increase sales: 1) Ensure high-quality product images, 2) Write clear descriptions, 3) Offer competitive prices, 4) Use promotional offers, 5) Ensure quick response to customer inquiries.'
 } as const;
+
+
+/**
+ * Client authentication client layer
+ */
+
+export async function clientLogin(email: string, password: string) {
+  const res = await fetch('/api/auth?mode=login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }), // Maps to backend 'email' and 'password' fields
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Invalid credentials');
+  }
+
+  const data = await res.json();
+  if (data.access) {
+    localStorage.setItem('accessToken', data.access);
+  }
+  return data;
+}
+
+export async function clientRegisterShopOwner(payload: any) {
+  const res = await fetch('/api/auth?mode=register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Registration failed');
+  }
+
+  return await res.json();
+}
+
+export async function clientCreateShop(shopData: { name: string; description: string }) {
+  const token = localStorage.getItem('accessToken');
+  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_BASE_URL;
+
+  const res = await fetch(`${baseUrl}/shops/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify(shopData),
+  });
+
+  if (!res.ok) {
+    throw new Error('Could not register store on backend');
+  }
+  return await res.json();
+}
+
+export async function detectUserRole(): Promise<string> {
+  // Mock role detection helper matching your initial components flow
+  const token = localStorage.getItem('accessToken');
+  if (!token) return 'shop_owner';
+  
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_BACKEND_BASE_URL;
+    const res = await fetch(`${baseUrl}/auth/user/1/`, { // Demo route id parameter example
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const userData = await res.json();
+      return userData.role?.toLowerCase() || 'shop_owner';
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return 'shop_owner';
+}

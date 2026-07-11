@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import ShikelaLogo from "@/components/dashboard/ShikelaLogo"
+import ShikelaLogo from "@/components/dashboard/ShikelaLogo";
 
 interface AuthLayoutProps {
   children: React.ReactNode;
@@ -15,7 +15,7 @@ export function AuthLayout({ children, showFooter = true }: AuthLayoutProps) {
         <ShikelaLogo />
       </header>
 
-      <div className="flex-1 flex flex-col items-center xxl:pt-0 items-center">
+      <div className="flex-1 flex flex-col items-center 2xl:pt-0">
         <div className="w-full max-w-md">
           {children}
         </div>

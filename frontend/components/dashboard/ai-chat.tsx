@@ -7,24 +7,21 @@ import { Card } from '@/components/ui/card';
 import { Send, Sparkles } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { ChatMessage } from '@/lib/types';
-import { AI_QUICK_SUGGESTIONS, AI_SAMPLE_RESPONSES } from '@/lib/constants';
+import { AI_QUICK_SUGGESTIONS } from '@/lib/constants';
 
 /**
  * AIChat Component
- * 
- * Purpose: Provides a chat interface for Shikela AI assistant
+ * * Purpose: Provides a chat interface for Shikela AI assistant
  * Features:
  * - Message history with localStorage persistence
  * - Quick suggestion buttons
- * - Sample AI responses for demo purposes
+ * - Hardcoded maintenance response
  * - Auto-scroll to latest messages
- * 
- * State Management:
+ * * State Management:
  * - messages: Current conversation history
  * - inputValue: User's current input
  * - isLoading: Show loading state while processing
- * 
- * Storage: Reads/writes to 'aiChatHistory' localStorage key
+ * * Storage: Reads/writes to 'aiChatHistory' localStorage key
  */
 export function AIChat() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
@@ -64,19 +61,12 @@ export function AIChat() {
     setInputValue('');
     setIsLoading(true);
 
-    // Simulate AI response with sample data
+    // Simulate AI response indicating temporary unavailability
     setTimeout(() => {
-      const aiResponses = [
-        AI_SAMPLE_RESPONSES.addProducts,
-        AI_SAMPLE_RESPONSES.shipping,
-        AI_SAMPLE_RESPONSES.sales,
-        "I'm Shikela AI, your personal store assistant. I can help you with managing products, payments, shipping, and growing your business. What would you like to know?"
-      ];
-
       const aiMessage: ChatMessage = {
         id: Math.random().toString(36).substr(2, 9),
         role: 'assistant',
-        content: aiResponses[Math.floor(Math.random() * aiResponses.length)],
+        content: "shikela ai is temporarily unavailable",
         timestamp: new Date().toISOString()
       };
 

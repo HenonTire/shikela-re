@@ -5,92 +5,197 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { Download, Plus, Search, MoreVertical, Trash2, Edit, Copy, Eye, EyeOff, Package } from 'lucide-react';
+import { Plus, Search, Package } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { storage } from '@/lib/storage';
 import { Product } from '@/lib/types';
 import { AddProductModal } from '@/components/dashboard/modals/add-product-modal';
 import { ProductActionMenu } from '@/components/dashboard/product-action-menu';
 import { DropshippingModal } from '@/components/dashboard/modals/dropshipping-modal';
-import { CSVImportModal } from '@/components/dashboard/modals/csv-import-modal';
+
+const API_BASE_URL = 'http://127.0.0.1:8000';
 
 export default function ProductsPage() {
-  const [products, setProducts] = useState<Product[]>(() => storage.getAll<Product>('products'));
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDropshippingModal, setShowDropshippingModal] = useState(false);
-  const [showCSVImportModal, setShowCSVImportModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [activeTab, setActiveTab] = useState('own');
+  const [suppliers, setSuppliers] = useState<any[]>([]);
 
-  // Calculate stats
+  // Helper method for authenticated fetch requests
+  const apiFetch = async (url: string, options: RequestInit = {}) => {
+    const token = localStorage.getItem('access_token');
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    };
+
+    const res = await fetch(`${API_BASE_URL}${url}`, { ...options, headers });
+    if (!res.ok) {
+      throw new Error(`API Error: ${res.statusText}`);
+    }
+    if (res.status === 204) return null;
+    return res.json();
+  };
+
+  // Fetch all products and supplier details from backend on load
+  const fetchProductsData = async () => {
+    setLoading(true);
+    try {
+      const data = await apiFetch('/catalog/products/');
+      // Map backend fields to component format if required
+      const normalizedProducts = data.map((p: any) => ({
+        id: p.id,
+        name: p.name || p.title,
+        category: p.category || '',
+        status: p.is_active || p.status === 'Active' ? 'Active' : 'Draft',
+        price: p.price,
+        stock: p.stock || p.inventory_quantity || 0,
+        sales: p.sales || 0,
+        revenue: p.revenue || 0,
+        image: p.image || '📦',
+        dropshipped: p.dropshipped || false,
+        supplierId: p.supplier_id || p.supplierId,
+        wholesalePrice: p.wholesale_price || p.wholesalePrice || 0,
+        markup: p.markup || 0,
+      }));
+      setProducts(normalizedProducts);
+
+      // Attempt to load suppliers for dropshipping name verification mapping
+      try {
+        const suppliersData = await apiFetch('/shops/');
+        setSuppliers(suppliersData);
+      } catch (_) {
+        // Fallback gracefully if separate vendors endpoint differs
+      }
+    } catch (error) {
+      console.error('Error loading products from backend:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProductsData();
+  }, []);
+
+  // Calculate statistics from backend products state data
   const totalProducts = products.length;
   const activeProducts = products.filter(p => p.status === 'Active').length;
   const draftProducts = products.filter(p => p.status === 'Draft').length;
-  const lowStockProducts = products.filter(p => p.status === 'Low').length;
+  const lowStockProducts = products.filter(p => p.stock <= 5).length;
 
-  // Filter and search
+  // Filter and search logic
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = filterStatus === 'all' || product.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
 
-  const handleAddProduct = (product: Omit<Product, 'id'>) => {
-    const newProduct = storage.create('products', product);
-    setProducts(prev => [...prev, newProduct]);
-    setShowAddModal(false);
-  };
-
-  const handleUpdateProduct = (product: Product) => {
-    storage.update('products', product);
-    setProducts(prev => prev.map(p => p.id === product.id ? product : p));
-    setEditingProduct(null);
-  };
-
-  const handleDeleteProduct = (id: string) => {
-    storage.delete('products', id);
-    setProducts(prev => prev.filter(p => p.id !== id));
-  };
-
-  const handleToggleStatus = (id: string) => {
-    const product = products.find(p => p.id === id);
-    if (product) {
-      const newStatus = product.status === 'Draft' ? 'Active' : 'Draft';
-      handleUpdateProduct({ ...product, status: newStatus });
+  const handleAddProduct = async (productData: Omit<Product, 'id'>) => {
+    try {
+      const payload = {
+        name: productData.name,
+        category: productData.category,
+        price: productData.price,
+        stock: productData.stock,
+        is_active: productData.status === 'Active',
+        dropshipped: productData.dropshipped || false,
+      };
+      await apiFetch('/catalog/products/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      fetchProductsData();
+      setShowAddModal(false);
+    } catch (error) {
+      console.error('Failed to create new product:', error);
     }
   };
 
-  const handleDuplicate = (id: string) => {
+  const handleUpdateProduct = async (product: Product) => {
+    try {
+      const payload = {
+        name: product.name,
+        category: product.category,
+        price: product.price,
+        stock: product.stock,
+        is_active: product.status === 'Active',
+        dropshipped: product.dropshipped,
+      };
+      await apiFetch(`/catalog/products/${product.id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+      fetchProductsData();
+      setEditingProduct(null);
+      setShowAddModal(false); // ✅ FIX: Added this to close the modal after updating
+    } catch (error) {
+      console.error('Failed to update product details:', error);
+    }
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this product?')) return;
+    try {
+      await apiFetch(`/catalog/products/${id}/`, {
+        method: 'DELETE',
+      });
+      setProducts(prev => prev.filter(p => p.id !== id));
+    } catch (error) {
+      console.error('Failed to delete product from inventory:', error);
+    }
+  };
+
+  const handleToggleStatus = async (id: string) => {
+    const product = products.find(p => p.id === id);
+    if (product) {
+      const newStatus = product.status === 'Draft' ? 'Active' : 'Draft';
+      await handleUpdateProduct({ ...product, status: newStatus });
+    }
+  };
+
+  const handleDuplicate = async (id: string) => {
     const product = products.find(p => p.id === id);
     if (product) {
       const duplicated = { ...product, name: `${product.name} (Copy)` };
       delete (duplicated as any).id;
-      handleAddProduct(duplicated);
+      await handleAddProduct(duplicated);
     }
   };
 
-  const handleImportDropshipped = (product: Product) => {
-    const newProduct = storage.create('products', product);
-    setProducts(prev => [...prev, newProduct]);
-    setShowDropshippingModal(false);
+  const handleImportDropshipped = async (product: Product) => {
+    try {
+      await handleAddProduct({ ...product, dropshipped: true });
+      setShowDropshippingModal(false);
+    } catch (error) {
+      console.error('Failed to import dropshipped product:', error);
+    }
   };
 
-  const handleImportCSV = (productsToImport: Product[]) => {
-    const newProducts = productsToImport.map(p => storage.create('products', p));
-    setProducts(prev => [...prev, ...newProducts]);
-  };
-
-  // Filter products by type
-  const ownProducts = products.filter(p => !p.dropshipped);
+  const ownProducts = filteredProducts.filter(p => !p.dropshipped);
   const dropshippedProducts = products.filter(p => p.dropshipped);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <AddProductModal 
         open={showAddModal} 
-        onOpenChange={setShowAddModal}
+        onOpenChange={(open) => {
+          setShowAddModal(open);
+          if (!open) setEditingProduct(null); // ✅ UX Improvement: Clears editing state if user cancels/clicks backdrop
+        }}
         onSubmit={handleAddProduct}
         editingProduct={editingProduct}
         onEditSubmit={handleUpdateProduct}
@@ -102,12 +207,6 @@ export default function ProductsPage() {
         onImport={handleImportDropshipped}
       />
 
-      <CSVImportModal
-        open={showCSVImportModal}
-        onOpenChange={setShowCSVImportModal}
-        onImport={handleImportCSV}
-      />
-
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -115,11 +214,13 @@ export default function ProductsPage() {
           <p className="text-gray-600 mt-1">Manage your product inventory</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" className="gap-2" onClick={() => setShowCSVImportModal(true)}>
-            <Download className="w-4 h-4" />
-            Import CSV
-          </Button>
-          <Button className="bg-blue-600 hover:bg-blue-700 gap-2" onClick={() => setShowAddModal(true)}>
+          <Button 
+            className="bg-blue-600 hover:bg-blue-700 gap-2" 
+            onClick={() => { 
+              setEditingProduct(null); 
+              setShowAddModal(true); 
+            }}
+          >
             <Plus className="w-4 h-4" />
             Add Product
           </Button>
@@ -130,7 +231,7 @@ export default function ProductsPage() {
       <div className="grid grid-cols-4 gap-4">
         <Card className="bg-white p-6">
           <p className="text-gray-600 text-sm">Total Products</p>
-          <p className="text-3xl font-bold text-gray-900 mt-2">{totalProducts}</p>
+          <p className="text-3xl font-bold text-gray-990 mt-2">{totalProducts}</p>
         </Card>
         <Card className="bg-emerald-50 p-6">
           <p className="text-gray-600 text-sm">Active Products</p>
@@ -168,7 +269,7 @@ export default function ProductsPage() {
             <div className="flex gap-2">
               <Button
                 variant={filterStatus === 'all' ? 'default' : 'outline'}
-                className={filterStatus === 'all' ? 'bg-blue-100 text-blue-700 border-blue-200' : ''}
+                className={filterStatus === 'all' ? 'bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200' : ''}
                 size="sm"
                 onClick={() => setFilterStatus('all')}
               >
@@ -176,7 +277,7 @@ export default function ProductsPage() {
               </Button>
               <Button
                 variant={filterStatus === 'Active' ? 'default' : 'outline'}
-                className={filterStatus === 'Active' ? 'bg-blue-100 text-blue-700 border-blue-200' : ''}
+                className={filterStatus === 'Active' ? 'bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200' : ''}
                 size="sm"
                 onClick={() => setFilterStatus('Active')}
               >
@@ -184,7 +285,7 @@ export default function ProductsPage() {
               </Button>
               <Button
                 variant={filterStatus === 'Draft' ? 'default' : 'outline'}
-                className={filterStatus === 'Draft' ? 'bg-blue-100 text-blue-700 border-blue-200' : ''}
+                className={filterStatus === 'Draft' ? 'bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200' : ''}
                 size="sm"
                 onClick={() => setFilterStatus('Draft')}
               >
@@ -193,94 +294,76 @@ export default function ProductsPage() {
             </div>
           </div>
 
-      {/* Products Table */}
-      <Card className="overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                <input type="checkbox" className="rounded" />
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                Product
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                Price
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                Stock
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                Sales
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                Revenue
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {filteredProducts.length > 0 ? (
-              filteredProducts.map((product) => (
-                <tr key={product.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
+          {/* Products Table */}
+          <Card className="overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
                     <input type="checkbox" className="rounded" />
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-lg">
-                        {product.image}
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{product.name}</p>
-                        <p className="text-sm text-gray-500">{product.category}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`px-3 py-1 rounded-full text-sm font-medium ${
-                        product.status === 'Active'
-                          ? 'bg-green-100 text-green-700'
-                          : product.status === 'Draft'
-                          ? 'bg-gray-100 text-gray-700'
-                          : 'bg-red-100 text-red-700'
-                      }`}
-                    >
-                      {product.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-gray-900">{product.price}</td>
-                  <td className="px-6 py-4 text-gray-900">{product.stock}</td>
-                  <td className="px-6 py-4 text-gray-900">{product.sales}</td>
-                  <td className="px-6 py-4 text-gray-900">{product.revenue}</td>
-                  <td className="px-6 py-4">
-                    <ProductActionMenu
-                      product={product}
-                      onEdit={() => {
-                        setEditingProduct(product);
-                        setShowAddModal(true);
-                      }}
-                      onDelete={() => handleDeleteProduct(product.id)}
-                      onToggleStatus={() => handleToggleStatus(product.id)}
-                      onDuplicate={() => handleDuplicate(product.id)}
-                    />
-                  </td>
+                  </th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Product</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Price</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Stock</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Sales</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Revenue</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900"></th>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
-                  No products found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {ownProducts.length > 0 ? (
+                  ownProducts.map((product) => (
+                    <tr key={product.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <input type="checkbox" className="rounded" />
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-lg">
+                            {product.image}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">{product.name}</p>
+                            <p className="text-sm text-gray-500">{product.category}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                          product.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {product.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-900">{product.price} ETB</td>
+                      <td className="px-6 py-4 text-gray-900">{product.stock}</td>
+                      <td className="px-6 py-4 text-gray-900">{product.sales}</td>
+                      <td className="px-6 py-4 text-gray-900">{product.revenue} ETB</td>
+                      <td className="px-6 py-4">
+                        <ProductActionMenu
+                          product={product}
+                          onEdit={() => {
+                            setEditingProduct(product);
+                            setShowAddModal(true);
+                          }}
+                          onDelete={() => handleDeleteProduct(product.id)}
+                          onToggleStatus={() => handleToggleStatus(product.id)}
+                          onDuplicate={() => handleDuplicate(product.id)}
+                        />
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                      No matching shop manager items found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </Card>
         </TabsContent>
 
         <TabsContent value="dropshipping" className="space-y-6 mt-6">
@@ -291,10 +374,7 @@ export default function ProductsPage() {
                 Products imported from verified suppliers. Stock syncs automatically.
               </p>
             </div>
-            <Button
-              onClick={() => setShowDropshippingModal(true)}
-              className="bg-green-600 hover:bg-green-700 gap-2"
-            >
+            <Button onClick={() => setShowDropshippingModal(true)} className="bg-green-600 hover:bg-green-700 gap-2">
               <Package className="w-4 h-4" />
               Browse Suppliers
             </Button>
@@ -320,30 +400,18 @@ export default function ProductsPage() {
             </Card>
           </div>
 
-          {/* Dropshipping Products Table */}
+          {/* Dropshipping Table */}
           {dropshippedProducts.length > 0 ? (
             <Card className="overflow-hidden">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                      Product
-                    </th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                      Supplier
-                    </th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                      Wholesale Price
-                    </th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                      Retail Price
-                    </th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                      Margin
-                    </th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                      Stock
-                    </th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Product</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Supplier</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Wholesale Price</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Retail Price</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Margin</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Stock</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -356,22 +424,14 @@ export default function ProductsPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-gray-900">
-                        {storage.getAll('suppliers').find((s: any) => s.id === product.supplierId)?.businessName || '-'}
+                        {suppliers.find((s: any) => s.id === product.supplierId)?.name || 'Platform Supplier'}
                       </td>
-                      <td className="px-6 py-4 text-gray-900">
-                        {product.wholesalePrice} ETB
-                      </td>
-                      <td className="px-6 py-4 font-medium text-gray-900">
-                        {product.price} ETB
-                      </td>
-                      <td className="px-6 py-4 text-green-600 font-medium">
-                        {product.markup}%
-                      </td>
+                      <td className="px-6 py-4 text-gray-900">{product.wholesalePrice} ETB</td>
+                      <td className="px-6 py-4 font-medium text-gray-900">{product.price} ETB</td>
+                      <td className="px-6 py-4 text-green-600 font-medium">{product.markup}%</td>
                       <td className="px-6 py-4">
                         <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                          product.stock > 0
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-700'
+                          product.stock > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                         }`}>
                           {product.stock}
                         </span>
@@ -385,13 +445,8 @@ export default function ProductsPage() {
             <Card className="p-12 text-center">
               <Package className="w-12 h-12 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-600 font-medium">No dropshipped products yet</p>
-              <p className="text-gray-500 text-sm mt-2">
-                Browse suppliers to start importing products
-              </p>
-              <Button
-                onClick={() => setShowDropshippingModal(true)}
-                className="mt-4 bg-green-600 hover:bg-green-700"
-              >
+              <p className="text-gray-500 text-sm mt-2">Browse suppliers to start importing products</p>
+              <Button onClick={() => setShowDropshippingModal(true)} className="mt-4 bg-green-600 hover:bg-green-700">
                 Browse Suppliers
               </Button>
             </Card>

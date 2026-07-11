@@ -8,14 +8,12 @@ import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import Link from 'next/link';
-import { registerShopOwner } from '@/lib/api-client';
+import { clientRegisterShopOwner } from '@/lib/api-client';
 import {
   Form,
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 
@@ -61,7 +59,7 @@ export function AccountForm() {
   async function onSubmit(values: AccountFormValues) {
     setIsLoading(true);
     try {
-      await registerShopOwner({
+      await clientRegisterShopOwner({
         first_name: values.firstName,
         last_name: values.lastName,
         email,
@@ -100,132 +98,70 @@ export function AccountForm() {
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          {/* First and Last Name */}
-          <div className="grid grid-cols-2 gap-4">
-            <FormField
-              control={form.control}
-              name="firstName"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-gray-700 text-sm font-medium">
-                    First Name
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="First Name"
-                      {...field}
-                      disabled={isLoading}
-                      className="bg-gray-100 border-0 placeholder:text-gray-400"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="lastName"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-gray-700 text-sm font-medium">
-                    Last Name
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Last Name"
-                      {...field}
-                      disabled={isLoading}
-                      className="bg-gray-100 border-0 placeholder:text-gray-400"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-
-          {/* Phone Number */}
+          <FormField
+            control={form.control}
+            name="firstName"
+            render={({ field }) => (
+              <FormItem>
+                <FormControl>
+                  <Input placeholder="First Name" {...field} disabled={isLoading} className="bg-gray-100 border-0" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="lastName"
+            render={({ field }) => (
+              <FormItem>
+                <FormControl>
+                  <Input placeholder="Last Name" {...field} disabled={isLoading} className="bg-gray-100 border-0" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <FormField
             control={form.control}
             name="phone"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-gray-700 text-sm font-medium">
-                  Phone Number
-                </FormLabel>
                 <FormControl>
-                  <Input
-                    placeholder="+251 9XX XXX XXX"
-                    {...field}
-                    disabled={isLoading}
-                    className="bg-gray-100 border-0 placeholder:text-gray-400"
-                  />
+                  <Input placeholder="Phone Number" {...field} disabled={isLoading} className="bg-gray-100 border-0" />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
-
-          {/* Password */}
           <FormField
             control={form.control}
             name="password"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-gray-700 text-sm font-medium">
-                  Password
-                </FormLabel>
                 <FormControl>
-                  <Input
-                    placeholder="Create a strong password"
-                    type="password"
-                    {...field}
-                    disabled={isLoading}
-                    className="bg-gray-100 border-0 placeholder:text-gray-400"
-                  />
+                  <Input type="password" placeholder="Password" {...field} disabled={isLoading} className="bg-gray-100 border-0" />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
-
-          {/* Terms Agreement */}
           <FormField
             control={form.control}
             name="agree"
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-start space-x-2 space-y-0">
                 <FormControl>
-                  <Checkbox
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                    disabled={isLoading}
-                  />
+                  <Checkbox checked={field.value} onCheckedChange={field.onChange} disabled={isLoading} />
                 </FormControl>
                 <div className="space-y-1 leading-none">
-                  <p className="text-sm text-gray-600">
-                    By continuing, you agree to the{' '}
-                    <Link href="#" className="text-blue-600 hover:underline">
-                      Terms
-                    </Link>{' '}
-                    and{' '}
-                    <Link href="#" className="text-blue-600 hover:underline">
-                      Privacy Policy
-                    </Link>
-                    .
-                  </p>
+                  <p className="text-sm text-gray-600">By continuing, you agree to the Terms and Privacy Policy.</p>
                   <FormMessage />
                 </div>
               </FormItem>
             )}
           />
-
-          <Button
-            type="submit"
-            disabled={isLoading}
-            className="w-full cursor-pointer bg-blue-600 hover:bg-blue-700 text-white py-5 text-base font-medium mt-6"
-          >
+          <Button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white py-5">
             {isLoading ? 'Creating account...' : 'Create Account'}
           </Button>
         </form>
