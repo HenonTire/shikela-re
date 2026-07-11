@@ -238,7 +238,6 @@ export default function OnlineStorePage() {
 
           <div className="grid grid-cols-2 gap-4">
             {plugins.map((plugin) => {
-              const Icon = plugin.icon;
               return (
                 <Card
                   key={plugin.id}
@@ -247,7 +246,6 @@ export default function OnlineStorePage() {
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <div className={`p-2 rounded-lg ${plugin.enabled ? 'bg-blue-100' : 'bg-gray-200'}`}>
-                        <Icon className={`w-6 h-6 ${plugin.enabled ? 'text-blue-600' : 'text-gray-600'}`} />
                       </div>
                       <div>
                         <h3 className="font-semibold text-gray-900">{plugin.name}</h3>
