@@ -135,6 +135,10 @@ SIMPLE_JWT = {
 
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
+
+    'AUTH_COOKIE_HTTP_ONLY': True,
+    'AUTH_COOKIE_SECURE': False, 
+    'AUTH_COOKIE_SAMESITE': 'Lax',
 }
 
 # Email engine

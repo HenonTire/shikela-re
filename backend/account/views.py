@@ -22,7 +22,7 @@ def _refresh_cookie_kwargs():
         "httponly": True,
         "secure": not settings.DEBUG,
         "samesite": "Lax",
-        "path": "/auth/refresh/",
+        # "path": "/auth/refresh/",
         "max_age": int(refresh_lifetime.total_seconds()),
     }
 
@@ -137,3 +137,10 @@ class ResendVerificationEmailView(APIView):
             {"detail": "If an account with that email exists, a verification email has been sent."},
             status=status.HTTP_200_OK,
         )
+
+class CurrentUserView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        serializer = UserSerializer(request.user, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)

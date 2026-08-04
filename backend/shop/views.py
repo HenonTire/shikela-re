@@ -64,3 +64,59 @@ class CreateThemeSettingsView(ListCreateAPIView):
             raise PermissionDenied("Theme settings already exist for this shop.")
         serializer.save(shop=shop)
     
+from rest_framework.views import APIView
+
+class UserShopDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        shop = getattr(request.user, "owned_shop", None)
+        if not shop:
+            return Response([], status=status.HTTP_200_OK)
+        
+        serializer = ShopSerializer(shop)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        # Pass request in context so the serializer's create() method can access request.user
+        serializer = ShopSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def patch(self, request):
+        shop = getattr(request.user, "owned_shop", None)
+        if not shop:
+            return Response(
+                {"detail": "No shop associated with this account."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = ShopSerializer(shop, data=request.data, partial=True, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request):
+        shop = getattr(request.user, "owned_shop", None)
+        if not shop:
+            return Response(
+                {"detail": "No shop associated with this account."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = ShopSerializer(shop, data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def delete(self, request):
+        shop = getattr(request.user, "owned_shop", None)
+        if not shop:
+            return Response(
+                {"detail": "No shop associated with this account."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        shop.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

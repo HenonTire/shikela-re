@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Bell, Search, Settings, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,18 +12,59 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { apiRequest } from '@/lib/api-client';
 
 export function DashboardHeader() {
-  const storeName = localStorage.getItem('storeName') || "Sam's Store";
+  const [storeName, setStoreName] = useState<string>("Sam's Store");
+  const [isLoadingStore, setIsLoadingStore] = useState<boolean>(true);
+
+  useEffect(() => {
+    async function fetchStoreDetails() {
+      try {
+        const res = await apiRequest<any>('/shops/details/', {
+          method: 'GET',
+          auth: true,
+        });
+
+        // Handle both single object or array formats returned by the backend
+        let shopData = null;
+        if (Array.isArray(res) && res.length > 0) {
+          shopData = res[0];
+        } else if (res && !Array.isArray(res)) {
+          shopData = res;
+        }
+
+        if (shopData) {
+          const name = shopData.name || shopData.storeName;
+          if (name) {
+            setStoreName(name);
+            // Optionally update localStorage for persistence across components
+            localStorage.setItem('storeName', name);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch store details for header:', err);
+        // Fallback to local storage if API call fails
+        const localStore = localStorage.getItem('storeName');
+        if (localStore) {
+          setStoreName(localStore);
+        }
+      } finally {
+        setIsLoadingStore(false);
+      }
+    }
+
+    fetchStoreDetails();
+  }, []);
 
   return (
     <header className="bg-white border-b border-gray-200 fixed top-0 left-64 right-0 h-16 z-40">
       <div className="h-full flex items-center px-6 justify-between">
         {/* Left: Store Selector */}
         <div className="w-44 flex-shrink-0">
-          <Select defaultValue={storeName}>
+          <Select value={storeName} disabled={isLoadingStore}>
             <SelectTrigger className="w-full border-gray-300">
-              <SelectValue />
+              <SelectValue placeholder={isLoadingStore ? "Loading..." : storeName} />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={storeName}>{storeName}</SelectItem>

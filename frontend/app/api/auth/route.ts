@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL;
 
+// Map front-end mode/role values to exact backend endpoint paths
+const ENDPOINT_MAP: Record<string, string> = {
+  login: "/auth/login/",
+  "register-customer": "/auth/register/",
+  "register-shop-owner": "/auth/register-shop-owner/",
+  "register-supplier": "/auth/register-supplier/",
+  "register-courier": "/auth/register-courier/",
+};
+
 export async function POST(req: NextRequest) {
   if (!BACKEND_URL) {
     return NextResponse.json(
@@ -12,17 +21,19 @@ export async function POST(req: NextRequest) {
 
   try {
     const url = new URL(req.url);
-    const mode = url.searchParams.get("mode");
+    const mode = url.searchParams.get("mode") || "login";
 
-    if (!mode || !["login", "register"].includes(mode)) {
+    // Fallback support if mode is simply "register" -> default to shop owner or customer
+    const targetEndpointKey = mode === "register" ? "register-shop-owner" : mode;
+    const endpoint = ENDPOINT_MAP[targetEndpointKey];
+
+    if (!endpoint) {
       return NextResponse.json(
-        { error: "Invalid auth mode, must be 'login' or 'register'" },
+        { error: `Invalid auth mode: '${mode}'` },
         { status: 400 }
       );
     }
 
-    // Match backend routes: /auth/login/ and /auth/register-shop-owner/
-    const endpoint = mode === "login" ? "/auth/login/" : "/auth/register-shop-owner/";
     const body = await req.json();
 
     const backendRes = await fetch(`${BACKEND_URL}${endpoint}`, {
@@ -43,17 +54,21 @@ export async function POST(req: NextRequest) {
 
     const data = await backendRes.json();
 
-    const response = NextResponse.json(data, {
-      status: backendRes.status,
-    });
+    
+const response = NextResponse.json(data, {
+  status: backendRes.status,
+});
 
-    // Forward the set-cookie header (like refresh_token HttpOnly cookie) to the frontend client browser
-    const setCookie = backendRes.headers.get("set-cookie");
-    if (setCookie) {
-      response.headers.set("set-cookie", setCookie);
-    }
 
-    return response;
+const cookies = backendRes.headers.getSetCookie 
+  ? backendRes.headers.getSetCookie() 
+  : [backendRes.headers.get("set-cookie")].filter(Boolean) as string[];
+
+cookies.forEach((cookie) => {
+  response.headers.append("set-cookie", cookie);
+});
+
+return response;
   } catch (error) {
     console.error("Auth route error:", error);
     return NextResponse.json(

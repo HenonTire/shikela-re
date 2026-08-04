@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { X, Upload } from 'lucide-react';
-import { storage, generateId, formatETB } from '@/lib/storage';
 import { Product } from '@/lib/types';
 import { PRODUCT_CATEGORIES, PRODUCT_STATUS } from '@/lib/constants';
+import { apiRequest } from '@/lib/api-client';
 import {
   Select,
   SelectContent,
@@ -17,57 +17,113 @@ import {
 } from '@/components/ui/select';
 
 interface AddProductModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onProductAdded: (product: Product) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (productData: Omit<Product, 'id'>) => Promise<void>;
+  editingProduct?: Product | null;
+  onEditSubmit?: (product: Product) => Promise<void>;
 }
 
-/**
- * AddProductModal Component
- * 
- * Purpose: Modal form for creating new products
- * Features:
- * - Form validation
- * - Image upload preview
- * - Category and status selection
- * - localStorage persistence
- * 
- * Props:
- * - isOpen: Whether modal is visible
- * - onClose: Called when modal closes
- * - onProductAdded: Called with new product after creation
- */
 export function AddProductModal({
-  isOpen,
-  onClose,
-  onProductAdded,
+  open,
+  onOpenChange,
+  onSubmit,
+  editingProduct,
+  onEditSubmit,
 }: AddProductModalProps) {
   const [formData, setFormData] = useState({
     name: '',
-    category: 'Electronics',
+    category: '',
     price: '',
+    supplier_price: '',
     stock: '',
     description: '',
-    status: 'Draft' as const,
+    status: 'Draft' as 'Active' | 'Draft',
   });
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [categoriesList, setCategoriesList] = useState<any[]>(PRODUCT_CATEGORIES);
 
-  if (!isOpen) return null;
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      category: '',
+      price: '',
+      supplier_price: '',
+      stock: '',
+      description: '',
+      status: 'Draft',
+    });
+    setImagePreview(null);
+    setErrors({});
+  };
 
-  /**
-   * Validate form fields
-   */
+  // Fetch live categories from backend catalog
+  useEffect(() => {
+    let isMounted = true;
+    const loadCategories = async () => {
+      try {
+        const response = await apiRequest<any>('/catalog/categories/', { auth: true });
+        const categories = Array.isArray(response) ? response : response?.results || [];
+        if (isMounted && categories.length > 0) {
+          setCategoriesList(categories);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch catalog categories, fallback to static defaults.', err);
+      }
+    };
+
+    if (open) {
+      loadCategories();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [open]);
+
+  // Sync form state when editing or opening modal
+  useEffect(() => {
+    if (editingProduct) {
+      setFormData({
+        name: editingProduct.name || '',
+        category:
+          (editingProduct as any).category_id ||
+          editingProduct.category ||
+          '',
+        price: editingProduct.price ? String(editingProduct.price) : '',
+        supplier_price: (editingProduct as any).supplier_price ? String((editingProduct as any).supplier_price) : '',
+        stock: editingProduct.stock ? String(editingProduct.stock) : '',
+        description: (editingProduct as any).description || '',
+        status:
+          editingProduct.status?.toLowerCase() === 'active' ? 'Active' : 'Draft',
+      });
+      setImagePreview(
+        typeof editingProduct.image === 'string' ? editingProduct.image : null
+      );
+    } else {
+      resetForm();
+    }
+  }, [editingProduct, open]);
+
+  if (!open) return null;
+
+  const handleClose = () => {
+    resetForm();
+    onOpenChange(false);
+  };
+
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.name.trim()) {
       newErrors.name = 'Product name is required';
     }
-    if (!formData.price || parseInt(formData.price) <= 0) {
+    if (!formData.price || parseFloat(formData.price) <= 0) {
       newErrors.price = 'Valid price is required';
     }
-    if (!formData.stock || parseInt(formData.stock) < 0) {
+    if (!formData.stock || parseInt(formData.stock, 10) < 0) {
       newErrors.stock = 'Valid stock is required';
     }
 
@@ -75,50 +131,58 @@ export function AddProductModal({
     return Object.keys(newErrors).length === 0;
   };
 
-  /**
-   * Handle form submission
-   */
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!validateForm()) return;
 
-    const newProduct: Product = {
-      id: generateId(),
-      name: formData.name,
-      category: formData.category,
-      price: parseInt(formData.price),
-      stock: parseInt(formData.stock),
-      sales: 0,
-      revenue: formatETB(0),
-      status: formData.status,
-      image: imagePreview || '',
-      description: formData.description,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    setIsSubmitting(true);
+    try {
+      // Clean payload adhering strictly to backend expectations (omitting empty optional foreign keys)
+      const payload: any = {
+        name: formData.name.trim(),
+        price: parseFloat(formData.price).toFixed(2),
+        stock: parseInt(formData.stock, 10),
+        is_active: formData.status === 'Active',
+        description: formData.description.trim(),
+        tags: [],
+      };
 
-    // Save to localStorage
-    storage.create('products', newProduct);
-    onProductAdded(newProduct);
+      if (formData.category && formData.category.trim() !== '') {
+        payload.category_id = formData.category;
+      }
 
-    // Reset form
-    setFormData({
-      name: '',
-      category: 'Electronics',
-      price: '',
-      stock: '',
-      description: '',
-      status: 'Draft',
-    });
-    setImagePreview(null);
-    setErrors({});
-    onClose();
+      if (formData.supplier_price) {
+        payload.supplier_price = parseFloat(formData.supplier_price).toFixed(2);
+      }
+
+      if (imagePreview && !imagePreview.startsWith('data:')) {
+        payload.media = [
+          {
+            media_type: 'IMAGE',
+            file: imagePreview,
+            is_primary: true,
+            order: 1,
+          },
+        ];
+      }
+
+      if (editingProduct && onEditSubmit) {
+        await onEditSubmit({
+          ...editingProduct,
+          ...payload,
+        } as unknown as Product);
+      } else {
+        await onSubmit(payload as unknown as Omit<Product, 'id'>);
+      }
+      handleClose();
+    } catch (error: any) {
+      console.error('Error submitting product form:', error?.message || error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  /**
-   * Handle image upload
-   */
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -131,16 +195,18 @@ export function AddProductModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white p-6 shadow-xl border border-gray-100">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {/* Header */}
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-900">Add Product</h2>
+            <h2 className="text-xl font-bold text-gray-900">
+              {editingProduct ? 'Edit Product' : 'Add Product'}
+            </h2>
             <button
               type="button"
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
+              onClick={handleClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -176,14 +242,25 @@ export function AddProductModal({
               }
             >
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Select a category" />
               </SelectTrigger>
               <SelectContent>
-                {PRODUCT_CATEGORIES.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {cat}
-                  </SelectItem>
-                ))}
+                {categoriesList.map((cat, index) => {
+                  const itemValue =
+                    typeof cat === 'string' ? cat : cat.id || cat.name;
+                  const itemLabel =
+                    typeof cat === 'string' ? cat : cat.name || cat.id;
+                  const itemKey =
+                    typeof cat === 'string'
+                      ? cat
+                      : cat.id || cat.name || index;
+
+                  return (
+                    <SelectItem key={itemKey} value={String(itemValue)}>
+                      {itemLabel}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -196,11 +273,12 @@ export function AddProductModal({
               </label>
               <Input
                 type="number"
+                step="0.01"
                 value={formData.price}
                 onChange={(e) =>
                   setFormData({ ...formData, price: e.target.value })
                 }
-                placeholder="0"
+                placeholder="0.00"
                 className={errors.price ? 'border-red-500' : ''}
               />
               {errors.price && (
@@ -238,7 +316,7 @@ export function AddProductModal({
               }
               placeholder="Product description"
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
@@ -247,7 +325,7 @@ export function AddProductModal({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Product Image
             </label>
-            <label className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-500 transition-colors">
+            <label className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-500 transition-colors flex flex-col items-center justify-center">
               {imagePreview ? (
                 <div className="flex flex-col items-center gap-2">
                   <img
@@ -281,7 +359,7 @@ export function AddProductModal({
             </label>
             <Select
               value={formData.status}
-              onValueChange={(value: any) =>
+              onValueChange={(value: 'Active' | 'Draft') =>
                 setFormData({ ...formData, status: value })
               }
             >
@@ -289,8 +367,8 @@ export function AddProductModal({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PRODUCT_STATUS.map((status) => (
-                  <SelectItem key={status} value={status}>
+                {PRODUCT_STATUS.map((status, index) => (
+                  <SelectItem key={status || index} value={status}>
                     {status}
                   </SelectItem>
                 ))}
@@ -303,16 +381,22 @@ export function AddProductModal({
             <Button
               type="button"
               variant="outline"
-              onClick={onClose}
+              onClick={handleClose}
               className="flex-1"
+              disabled={isSubmitting}
             >
               Cancel
             </Button>
             <Button
               type="submit"
-              className="flex-1 bg-blue-600 hover:bg-blue-700"
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={isSubmitting}
             >
-              Add Product
+              {isSubmitting
+                ? 'Saving...'
+                : editingProduct
+                ? 'Update Product'
+                : 'Add Product'}
             </Button>
           </div>
         </form>

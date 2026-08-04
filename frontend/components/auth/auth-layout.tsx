@@ -8,7 +8,7 @@ interface AuthLayoutProps {
   showFooter?: boolean;
 }
 
-export function AuthLayout({ children, showFooter = true }: AuthLayoutProps) {
+export default function AuthLayout({ children, showFooter = true }: AuthLayoutProps) {
   return (
     <div className="min-h-screen bg-white flex flex-col">
       <header className="p-6">
